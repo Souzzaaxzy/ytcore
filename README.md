@@ -99,14 +99,33 @@ result = YouTube().fetch("nome da musica", out_dir="dl", fmt="mp3")
 
 ## Limites (seja honesto consigo mesmo)
 
+Testei 20 músicas de ponta a ponta. Resultado:
+
+| Estágio | Resultado |
+|---|---|
+| Busca | **20/20** |
+| Extração (URLs de áudio) | **20/20** |
+| Download do arquivo | **0/20** (HTTP 403) |
+
+O download falha porque o **googlevideo bloqueia IP de datacenter**. Isso **não
+é bug da lib**: rodei o mesmo vídeo, do mesmo IP, com o **yt-dlp** e ele
+**também deu 403**. O CDN do YouTube recusa requisições de IPs de nuvem/VPS.
+
+Do que dá pra fazer sobre isso:
+
+- **IP residencial** → costuma funcionar direto.
+- **Cookies** → ajudam na extração, mas o 403 do CDN persiste de datacenter.
+- **Proxy residencial** → a saída confiável para rodar em VPS.
+
+A lib detecta o 403 e levanta um `DownloadError` explicando exatamente isso, em
+vez de um stack trace cru.
+
+Outros limites:
+
 - **A API interna não é oficial.** O YouTube pode mudar o InnerTube a qualquer
-  momento. Se o client `ANDROID_VR` parar de devolver URLs diretas, a lib
-  precisa de ajuste. O yt-dlp é atualizado com frequência justamente por isso —
-  essa independência tem esse preço.
-- **IP de datacenter** pode receber `LOGIN_REQUIRED` ("Sign in to confirm you're
-  not a bot") em alguns vídeos. De IP residencial costuma ir direto.
-- Baixe só o que você tem direito: seus vídeos, CC ou domínio público. Respeite
-  os Termos do YouTube e o direito autoral.
+  momento (os clients `VISIONOS`/`ANDROID_VR` mudam de comportamento com
+  frequência). Essa independência tem esse preço.
+- Baixe só o que você tem direito: seus vídeos, CC ou domínio público.
 
 ## Estrutura
 

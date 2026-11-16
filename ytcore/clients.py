@@ -66,7 +66,6 @@ WEB = Client(
 )
 
 #: Android VR client - returns direct audio URLs from the player endpoint.
-#: The VR client does not require a proof-of-origin token or signature solving.
 ANDROID_VR = Client(
     name="ANDROID_VR",
     version="1.60.19",
@@ -82,14 +81,34 @@ ANDROID_VR = Client(
     },
 )
 
+#: Apple Vision Pro client - currently the most permissive for the player
+#: endpoint: with a bootstrapped ``visitorData`` it returns direct audio URLs
+#: where other clients answer LOGIN_REQUIRED.
+VISIONOS = Client(
+    name="VISIONOS",
+    version="1.02",
+    key=WEB_KEY,
+    client_id="101",
+    user_agent=(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 "
+        "(KHTML, like Gecko) Version/26.0 Safari/605.1.15"
+    ),
+    extra={
+        "deviceMake": "Apple",
+        "deviceModel": "RealityDevice17,1",
+        "osName": "visionOS",
+        "osVersion": "26.5.23O471",
+    },
+)
+
 #: Fallback order for the player endpoint, best first.
-PLAYER_CLIENTS = [ANDROID_VR, WEB]
+PLAYER_CLIENTS = [VISIONOS, ANDROID_VR, WEB]
 #: Client used for search / suggestions.
 SEARCH_CLIENT = WEB
 
 
 def client_by_name(name: str) -> Optional[Client]:
-    for client in (WEB, ANDROID_VR):
+    for client in (WEB, ANDROID_VR, VISIONOS):
         if client.name == name:
             return client
     return None

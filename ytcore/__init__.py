@@ -16,8 +16,9 @@ library, and uses ffmpeg to produce audio files.
     result = yt.fetch(track.id, out_dir="downloads", fmt="mp3")
     print(result.audio_path, result.cover_path)
 
-The ``ANDROID_VR`` InnerTube client is used for playback because it returns
-direct, un-ciphered audio URLs - no signature solving, no JS runtime.
+The ``VISIONOS`` InnerTube client is used for playback because, with a
+bootstrapped visitor id, it returns direct audio URLs where other clients
+answer LOGIN_REQUIRED. ``ANDROID_VR`` and ``WEB`` are the fallbacks.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from __future__ import annotations
 import os
 
 from .client import InnerTube
-from .clients import ANDROID_VR, WEB, Client
+from .clients import ANDROID_VR, VISIONOS, WEB, Client
 from .download import Downloaded, Downloader, safe_name
 from .errors import (
     DownloadError,
@@ -53,9 +54,11 @@ class YouTube:
         ffmpeg: FFmpeg | None = None,
         hl: str = "en",
         gl: str = "US",
+        cookiefile: str | None = None,
     ) -> None:
-        self.inner = InnerTube(transport, hl=hl, gl=gl)
-        self.downloader = Downloader(ffmpeg)
+        self.inner = InnerTube(transport, hl=hl, gl=gl, cookiefile=cookiefile)
+        cookie = getattr(self.inner.transport, "cookie", "") if cookiefile else ""
+        self.downloader = Downloader(ffmpeg, cookie=cookie)
 
     # -- reads -----------------------------------------------------------
     def search(self, query: str, *, limit: int = 10) -> list[Track]:
@@ -66,6 +69,10 @@ class YouTube:
 
     def get(self, target: str) -> Track:
         return self.inner.get(target)
+
+    def resolve(self, query: str) -> Track:
+        """Find a playable track for a query, trying several results."""
+        return self.inner.resolve(query)
 
     def stream_url(self, target: str) -> str | None:
         return self.inner.stream_url(target)
@@ -112,7 +119,7 @@ class YouTube:
             except YtcoreError:
                 track = None
         if track is None:
-            track = self.search_one(query)
+            track = self.inner.resolve(query)
         if track is None:
             raise DownloadError(f"nothing found for {query!r}")
 
@@ -150,6 +157,7 @@ __all__ = [
     "Client",
     "WEB",
     "ANDROID_VR",
+    "VISIONOS",
     "FFmpeg",
     "find_ffmpeg",
     "find_ffprobe",

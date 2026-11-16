@@ -32,17 +32,54 @@ class InnerTube:
         *,
         hl: str = "en",
         gl: str = "US",
+        bootstrap: bool = True,
+        cookiefile: Optional[str] = None,
     ) -> None:
-        self.transport: Transport = transport or UrllibTransport()
+        self.transport: Transport = transport or UrllibTransport(cookiefile=cookiefile)
         self.hl = hl
         self.gl = gl
+        self._bootstrapped = False
+        self._bootstrap = bootstrap
+        #: When a player response comes back LOGIN_REQUIRED, how many extra
+        #: search results to try before giving up.
+        self.result_fallbacks = 4
+
+    # -- session bootstrap ----------------------------------------------
+    def bootstrap_session(self) -> None:
+        """Visit the homepage once to collect cookies and a ``visitorData``.
+
+        YouTube hands out ``VISITOR_INFO1_LIVE`` and a visitor id here; sending
+        them on later calls makes far fewer requests come back
+        ``LOGIN_REQUIRED``.
+        """
+        if self._bootstrapped or not self._bootstrap:
+            return
+        self._bootstrapped = True
+        try:
+            self.transport.get(
+                "https://www.youtube.com/",
+                {"User-Agent": SEARCH_CLIENT.user_agent, "Accept-Language": "en-US,en;q=0.9"},
+            )
+        except Exception:  # noqa: BLE001 - bootstrap is best-effort
+            pass
+
+    def _visitor_data(self) -> Optional[str]:
+        return getattr(self.transport, "visitor_data", None)
 
     # -- low level -------------------------------------------------------
     def _post(self, endpoint: str, payload: dict, client: Client) -> dict:
+        self.bootstrap_session()
         url = f"{INNERTUBE_BASE}/{endpoint}?key={client.key}&prettyPrint=false"
         body = dict(payload)
-        body.setdefault("context", client.context(hl=self.hl, gl=self.gl))
-        resp = self.transport.post_json(url, body, client.headers())
+        context = client.context(hl=self.hl, gl=self.gl)
+        visitor = self._visitor_data()
+        if visitor:
+            context["client"]["visitorData"] = visitor
+        body.setdefault("context", context)
+        headers = client.headers()
+        if visitor:
+            headers["X-Goog-Visitor-Id"] = visitor
+        resp = self.transport.post_json(url, body, headers)
         if resp.status >= 400:
             raise InnerTubeError(f"{endpoint} returned HTTP {resp.status}: {resp.text[:200]}")
         data = resp.json()
@@ -100,6 +137,36 @@ class InnerTube:
             f"no playable formats for {video_id} (status={last_status})",
             status=last_status,
         )
+
+    def resolve(self, query: str, *, attempts: Optional[int] = None) -> Track:
+        """Find a *playable* track for ``query``.
+
+        Searches, then tries results in order until one yields audio. This
+        handles the common case where the top hit is region-blocked or taken
+        down (``UNPLAYABLE``).
+        """
+        if video_id_from_url(query):
+            try:
+                return self.get(query)
+            except PlayerError:
+                pass  # fall through to search
+
+        limit = attempts or self.result_fallbacks + 1
+        results = self.search(query, limit=limit)
+        last_error: Optional[PlayerError] = None
+        for result in results:
+            try:
+                return self.get(result.id)
+            except PlayerError as exc:
+                last_error = exc
+                continue
+        if last_error is not None:
+            raise PlayerError(
+                f"no playable result for {query!r} ({len(results)} tried, "
+                f"last status={last_error.status})",
+                status=last_error.status,
+            )
+        raise PlayerError(f"no results for {query!r}")
 
     def formats(self, target: str) -> List[Format]:
         return self.get(target).formats

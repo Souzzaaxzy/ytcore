@@ -79,12 +79,18 @@ class FFmpeg:
         duration: Optional[float] = None,
         normalize: bool = False,
         user_agent: Optional[str] = None,
+        http_headers: Optional[dict] = None,
         extra_args: Sequence[str] = (),
     ) -> str:
         """Convert/extract audio from ``source`` (file or URL) into ``target``."""
         args: List[str] = ["-hide_banner", "-loglevel", "error", "-y"]
-        if user_agent and _is_url(source):
-            args += ["-user_agent", user_agent]
+        if _is_url(source):
+            headers = dict(http_headers or {})
+            if user_agent:
+                headers.setdefault("User-Agent", user_agent)
+            if headers:
+                blob = "".join(f"{k}: {v}\r\n" for k, v in headers.items())
+                args += ["-headers", blob]
         if start is not None:
             args += ["-ss", str(start)]
         args += ["-i", source]

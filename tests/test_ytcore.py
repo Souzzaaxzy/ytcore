@@ -160,8 +160,8 @@ def test_get_builds_track_from_player():
     assert track.view_count == 1500000000
     assert len(track.audio_formats) == 2
     assert track.audio_url == "https://cdn/a251"
-    # player call used the ANDROID_VR client
-    assert ft.calls[0].headers["X-YouTube-Client-Name"] == "28"
+    # player call used the VISIONOS client (first in the fallback chain)
+    assert ft.calls[0].headers["X-YouTube-Client-Name"] == "101"
 
 
 def test_get_falls_back_to_next_client(monkeypatch):
@@ -217,25 +217,42 @@ def test_find_ffmpeg_missing(monkeypatch):
         mod.find_ffmpeg()
 
 
-def test_convert_sends_user_agent_for_urls(tmp_path, monkeypatch):
+def test_convert_sends_headers_for_urls(tmp_path, monkeypatch):
     ff = FFmpeg.__new__(FFmpeg)
     ff.ffmpeg = "/fake/ffmpeg"
     ff.ffprobe = None
     captured = {}
     monkeypatch.setattr(ff, "run", lambda args, timeout=600.0: captured.setdefault("args", args) or "")
     ff.convert("https://cdn/audio", str(tmp_path / "o.mp3"), fmt="mp3", user_agent="UA/1")
-    assert "-user_agent" in captured["args"]
-    assert captured["args"][captured["args"].index("-user_agent") + 1] == "UA/1"
+    assert "-headers" in captured["args"]
+    blob = captured["args"][captured["args"].index("-headers") + 1]
+    assert "User-Agent: UA/1" in blob
 
 
-def test_convert_omits_user_agent_for_files(tmp_path, monkeypatch):
+def test_convert_sends_cookie_header(tmp_path, monkeypatch):
+    ff = FFmpeg.__new__(FFmpeg)
+    ff.ffmpeg = "/fake/ffmpeg"
+    ff.ffprobe = None
+    captured = {}
+    monkeypatch.setattr(ff, "run", lambda args, timeout=600.0: captured.setdefault("args", args) or "")
+    ff.convert(
+        "https://cdn/audio",
+        str(tmp_path / "o.mp3"),
+        fmt="mp3",
+        http_headers={"User-Agent": "UA", "Cookie": "SID=abc"},
+    )
+    blob = captured["args"][captured["args"].index("-headers") + 1]
+    assert "Cookie: SID=abc" in blob
+
+
+def test_convert_omits_headers_for_files(tmp_path, monkeypatch):
     ff = FFmpeg.__new__(FFmpeg)
     ff.ffmpeg = "/fake/ffmpeg"
     ff.ffprobe = None
     captured = {}
     monkeypatch.setattr(ff, "run", lambda args, timeout=600.0: captured.setdefault("args", args) or "")
     ff.convert(str(tmp_path / "in.wav"), str(tmp_path / "o.mp3"), fmt="mp3", user_agent="UA/1")
-    assert "-user_agent" not in captured["args"]
+    assert "-headers" not in captured["args"]
 
 
 def test_convert_end_to_end(tmp_path):
