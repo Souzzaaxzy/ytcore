@@ -80,30 +80,61 @@ class Downloader:
         start: Optional[float] = None,
         normalize: bool = False,
     ) -> str:
-        """Have ffmpeg pull the audio straight from the stream URL."""
-        best = track.best_audio()
-        if best is None:
-            raise DownloadError(f"no audio stream for {track.id}")
+        """Download the audio with ffmpeg.
+
+        Prefers the HLS manifest: the direct googlevideo URLs are gated behind
+        the ``n`` parameter (a JavaScript challenge), so they answer 403 unless
+        that challenge has been solved. The HLS manifest does not need it.
+        """
         os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-        try:
-            return self.ffmpeg.convert(
-                best.url,
-                out_path,
-                fmt=fmt,
-                bitrate=bitrate,
-                duration=duration,
-                start=start,
-                normalize=normalize,
-                http_headers=self._headers(),
+        errors = []
+
+        if track.hls_url:
+            try:
+                return self.ffmpeg.convert(
+                    track.hls_url,
+                    out_path,
+                    fmt=fmt,
+                    bitrate=bitrate,
+                    duration=duration,
+                    start=start,
+                    normalize=normalize,
+                    http_headers=self._headers(),
+                )
+            except FFmpegError as exc:
+                errors.append(f"hls: {exc}")
+
+        best = track.best_audio()
+        if best is not None:
+            try:
+                return self.ffmpeg.convert(
+                    best.url,
+                    out_path,
+                    fmt=fmt,
+                    bitrate=bitrate,
+                    duration=duration,
+                    start=start,
+                    normalize=normalize,
+                    http_headers=self._headers(),
+                )
+            except FFmpegError as exc:
+                errors.append(f"direct: {exc}")
+
+        if not errors:
+            raise DownloadError(f"no audio stream for {track.id}")
+        if any("429" in e for e in errors):
+            raise DownloadError(
+                "the CDN rate-limited the request (HTTP 429 Too Many Requests). "
+                "Wait a few minutes and retry; avoid firing many downloads at once."
             )
-        except FFmpegError as exc:
-            if "403" in str(exc):
-                raise DownloadError(
-                    "the CDN refused the stream (HTTP 403). This usually means the "
-                    "request came from a datacenter IP, which YouTube blocks. Pass a "
-                    "cookiefile to YouTube(...) or run from a residential network."
-                ) from exc
-            raise
+        if any("403" in e for e in errors):
+            raise DownloadError(
+                "the CDN refused the stream (HTTP 403). The direct URL needs the "
+                "JavaScript challenge (n parameter); the HLS manifest also failed, "
+                "which usually means the request came from a blocked datacenter IP. "
+                "Pass a cookiefile to YouTube(...) or run from a residential network."
+            )
+        raise DownloadError(f"could not download {track.id}: " + " | ".join(errors))
 
     def download_bytes(self, track: Track, out_path: str, *, chunk_size: int = 1 << 16) -> str:
         """Fetch the raw audio stream with urllib and write it to ``out_path``."""

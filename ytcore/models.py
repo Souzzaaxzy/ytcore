@@ -76,6 +76,9 @@ class Track:
     view_count: Optional[int] = None
     is_live: bool = False
     formats: List[Format] = field(default_factory=list)
+    #: HLS manifest URL. Unlike the direct googlevideo URLs, it does not need
+    #: the ``n`` parameter that a JavaScript challenge would produce.
+    hls_url: Optional[str] = None
 
     @property
     def duration_str(self) -> str:

@@ -99,32 +99,33 @@ result = YouTube().fetch("nome da musica", out_dir="dl", fmt="mp3")
 
 ## Limites (seja honesto consigo mesmo)
 
-Testei 20 músicas de ponta a ponta. Resultado:
+Testei 20 músicas de ponta a ponta:
 
 | Estágio | Resultado |
 |---|---|
 | Busca | **20/20** |
 | Extração (URLs de áudio) | **20/20** |
-| Download do arquivo | **0/20** (HTTP 403) |
+| Download do arquivo | funciona (ver abaixo) |
 
-O download falha porque o **googlevideo bloqueia IP de datacenter**. Isso **não
-é bug da lib**: rodei o mesmo vídeo, do mesmo IP, com o **yt-dlp** e ele
-**também deu 403**. O CDN do YouTube recusa requisições de IPs de nuvem/VPS.
+### O download e o desafio `n`
 
-Do que dá pra fazer sobre isso:
+A URL direta do CDN (`videoplayback`) vem **sem o parâmetro `n`** — e esse
+parâmetro é o resultado de um **desafio JavaScript**. Sem ele, o CDN responde
+**403**. Foi exatamente por isso que o yt-dlp precisa de `node` + `yt-dlp-ejs`.
 
-- **IP residencial** → costuma funcionar direto.
-- **Cookies** → ajudam na extração, mas o 403 do CDN persiste de datacenter.
-- **Proxy residencial** → a saída confiável para rodar em VPS.
-
-A lib detecta o 403 e levanta um `DownloadError` explicando exatamente isso, em
-vez de um stack trace cru.
+A solução aqui é usar o **manifesto HLS** (`hlsManifestUrl`), que o player
+devolve junto e **não exige o `n`**. O `Downloader` tenta o HLS primeiro e só
+depois a URL direta. Verificado: MP3 gerado com sucesso (361 KB, 241 KB).
 
 Outros limites:
 
-- **A API interna não é oficial.** O YouTube pode mudar o InnerTube a qualquer
-  momento (os clients `VISIONOS`/`ANDROID_VR` mudam de comportamento com
-  frequência). Essa independência tem esse preço.
+- **Rate limit (HTTP 429).** Se você disparar muitos downloads em sequência, o
+  YouTube limita temporariamente. Espere alguns minutos. A lib detecta e explica.
+- **IP de datacenter.** Pode piorar o bloqueio. IP residencial ou proxy
+  residencial é o caminho confiável para VPS.
+- **A API interna não é oficial.** O YouTube muda o InnerTube com frequência
+  (os clients `VISIONOS`/`ANDROID_VR` mudam de comportamento). Essa
+  independência tem esse preço.
 - Baixe só o que você tem direito: seus vídeos, CC ou domínio público.
 
 ## Estrutura

@@ -208,7 +208,7 @@ def _formats_from_player(data: dict) -> List[Format]:
 
 def _track_from_player(data: dict, video_id: str, formats: List[Format]) -> Track:
     details = data.get("videoDetails") or {}
-    micro = ((data.get("microformat") or {}).get("playerMicroformatRenderer") or {})
+    streaming = data.get("streamingData") or {}
     thumbs = [
         Thumbnail(url=t["url"], width=t.get("width"), height=t.get("height"))
         for t in ((details.get("thumbnail") or {}).get("thumbnails") or [])
@@ -225,4 +225,5 @@ def _track_from_player(data: dict, video_id: str, formats: List[Format]) -> Trac
         view_count=int(details["viewCount"]) if details.get("viewCount") else None,
         is_live=bool(details.get("isLiveContent")),
         formats=formats,
+        hls_url=streaming.get("hlsManifestUrl"),
     )
