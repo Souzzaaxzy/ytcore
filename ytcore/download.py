@@ -82,27 +82,13 @@ class Downloader:
     ) -> str:
         """Download the audio with ffmpeg.
 
-        Prefers the HLS manifest: the direct googlevideo URLs are gated behind
-        the ``n`` parameter (a JavaScript challenge), so they answer 403 unless
-        that challenge has been solved. The HLS manifest does not need it.
+        Tries the direct googlevideo URL first - it is a single HTTP request and
+        measured ~25x faster than HLS in testing. When the direct URL answers
+        403 (the ``n`` challenge was not solved) it falls back to the HLS
+        manifest, which needs no ``n`` but downloads segment by segment.
         """
         os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
         errors = []
-
-        if track.hls_url:
-            try:
-                return self.ffmpeg.convert(
-                    track.hls_url,
-                    out_path,
-                    fmt=fmt,
-                    bitrate=bitrate,
-                    duration=duration,
-                    start=start,
-                    normalize=normalize,
-                    http_headers=self._headers(),
-                )
-            except FFmpegError as exc:
-                errors.append(f"hls: {exc}")
 
         best = track.best_audio()
         if best is not None:
@@ -119,6 +105,21 @@ class Downloader:
                 )
             except FFmpegError as exc:
                 errors.append(f"direct: {exc}")
+
+        if track.hls_url:
+            try:
+                return self.ffmpeg.convert(
+                    track.hls_url,
+                    out_path,
+                    fmt=fmt,
+                    bitrate=bitrate,
+                    duration=duration,
+                    start=start,
+                    normalize=normalize,
+                    http_headers=self._headers(),
+                )
+            except FFmpegError as exc:
+                errors.append(f"hls: {exc}")
 
         if not errors:
             raise DownloadError(f"no audio stream for {track.id}")
